@@ -18,8 +18,8 @@ contract UniversalRewardsDistributor is IUniversalRewardsDistributor, Ownable {
 
     /* STORAGE */
 
-    /// @notice The merkle tree's root of the current rewards distribution.
-    bytes32 public root;
+    /// @notice The merkle tree's root of the current rewards distribution of each token.
+    mapping (address => bytes32) public roots;
 
     /// @notice The `amount` of `reward` token already claimed by `account`.
     mapping(address account => mapping(address reward => uint256 amount)) public claimed;
@@ -28,9 +28,9 @@ contract UniversalRewardsDistributor is IUniversalRewardsDistributor, Ownable {
 
     /// @notice Updates the current merkle tree's root.
     /// @param newRoot The new merkle tree's root.
-    function updateRoot(bytes32 newRoot) external onlyOwner {
-        root = newRoot;
-        emit RootUpdated(newRoot);
+    function updateRoot(address token, bytes32 newRoot) external onlyOwner {
+        roots[token] = newRoot;
+        emit RootUpdated(token, newRoot);
     }
 
     /// @notice Transfers the `token` balance from this contract to the owner.
@@ -40,24 +40,24 @@ contract UniversalRewardsDistributor is IUniversalRewardsDistributor, Ownable {
 
     /// @notice Claims rewards.
     /// @param account The address to claim rewards for.
-    /// @param reward The address of the reward token.
+    /// @param token The address of the reward token.
     /// @param claimable The overall claimable amount of token rewards.
     /// @param proof The merkle proof that validates this claim.
-    function claim(address account, address reward, uint256 claimable, bytes32[] calldata proof) external {
+    function claim(address account, address token, uint256 claimable, bytes32[] calldata proof) external {
         if (
             !MerkleProof.verifyCalldata(
-                proof, root, keccak256(bytes.concat(keccak256(abi.encode(account, reward, claimable))))
+                proof, roots[token], keccak256(bytes.concat(keccak256(abi.encode(account, claimable))))
             )
         ) {
             revert ProofInvalidOrExpired();
         }
 
-        uint256 amount = claimable - claimed[account][reward];
+        uint256 amount = claimable - claimed[account][token];
         if (amount == 0) revert AlreadyClaimed();
 
-        claimed[account][reward] = claimable;
+        claimed[account][token] = claimable;
 
-        ERC20(reward).safeTransfer(account, amount);
-        emit RewardsClaimed(account, reward, amount);
+        ERC20(token).safeTransfer(account, amount);
+        emit RewardsClaimed(account, token, amount);
     }
 }
