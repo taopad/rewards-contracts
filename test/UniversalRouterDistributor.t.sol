@@ -72,35 +72,41 @@ contract UniversalRouterDistributor is Test {
         claimable = bound(claimable, 1 ether, type(uint256).max);
         uint256 boundedSize = bound(size, 2, MAX_RECEIVERS);
 
-        bytes32[] memory data1 = _setupRewards(address(token1), claimable, boundedSize);
-        bytes32[] memory data2 = _setupRewards(address(token2), claimable, boundedSize);
-        _claimAndVerifyRewards(address(token1), data1, claimable);
-        _claimAndVerifyRewards(address(token2), data2, claimable);
+        uint256[] memory rewards = _computeRewards(claimable, boundedSize);
+
+        (bytes32[] memory data1,) = _setupRewards(address(token1), rewards);
+        (bytes32[] memory data2,) = _setupRewards(address(token2), rewards);
+
+        _claimAndVerifyRewards(address(token1), rewards, data1);
+        _claimAndVerifyRewards(address(token2), rewards, data2);
     }
 
-    function testRewardsWithUpdate(uint256 claimable1, uint256 claimable2, uint8 size) public {
-        claimable1 = bound(claimable1, 1 ether, type(uint128).max);
-        claimable2 = bound(claimable2, claimable1 * 2, type(uint256).max);
+    function testRewardsWithUpdate(uint256 claimable, uint8 size) public {
+        claimable = bound(claimable, 1 ether, type(uint256).max);
         uint256 boundedSize = bound(size, 2, MAX_RECEIVERS);
 
-        bytes32[] memory data1 = _setupRewards(address(token1), claimable1, boundedSize);
-        _claimAndVerifyRewards(address(token1), data1, claimable1);
+        uint256[] memory rewards2 = _computeRewards(claimable, boundedSize);
+        uint256[] memory rewards1 = _computeHalfRewards(rewards2);
 
-        bytes32[] memory data2 = _setupRewards(address(token1), claimable2, boundedSize);
-        _claimAndVerifyRewards(address(token1), data2, claimable2);
+        (bytes32[] memory data1, uint256 sent) = _setupRewards(address(token1), rewards1);
+        _claimAndVerifyRewards(address(token1), rewards1, data1);
+
+        (bytes32[] memory data2,) = _setupRewards(address(token1), rewards2, sent);
+        _claimAndVerifyRewards(address(token1), rewards2, data2);
     }
 
     function testRewardsShouldRevertWhenAlreadyClaimed(uint256 claimable, uint8 size) public {
         claimable = bound(claimable, 1 ether, type(uint256).max);
         uint256 boundedSize = bound(size, 2, MAX_RECEIVERS);
 
-        bytes32[] memory data = _setupRewards(address(token1), claimable, boundedSize);
+        uint256[] memory rewards = _computeRewards(claimable, boundedSize);
+        (bytes32[] memory data,) = _setupRewards(address(token1), rewards);
 
         bytes32[] memory proof = merkle.getProof(data, 0);
-        distributor.claim(vm.addr(1), address(token1), claimable / 2, proof); // first user has claimable / 2
+        distributor.claim(vm.addr(1), address(token1), rewards[0], proof);
 
         vm.expectRevert(IUniversalRewardsDistributor.AlreadyClaimed.selector);
-        distributor.claim(vm.addr(1), address(token1), claimable / 2, proof); // first user has claimable / 2
+        distributor.claim(vm.addr(1), address(token1), rewards[0], proof);
     }
 
     function testRewardsShouldRevertWhenInvalidProofAndCorrectInputs(
@@ -111,10 +117,11 @@ contract UniversalRouterDistributor is Test {
         claimable = bound(claimable, 1 ether, type(uint256).max);
         uint256 boundedSize = bound(size, 2, MAX_RECEIVERS);
 
-        _setupRewards(address(token1), claimable, boundedSize);
+        uint256[] memory rewards = _computeRewards(claimable, boundedSize);
+        _setupRewards(address(token1), rewards);
 
         vm.expectRevert(IUniversalRewardsDistributor.ProofInvalidOrExpired.selector);
-        distributor.claim(vm.addr(1), address(token1), claimable / 2, proof); // first user has claimable / 2
+        distributor.claim(vm.addr(1), address(token1), rewards[0], proof);
     }
 
     function testRewardsShouldRevertWhenValidProofButIncorrectInputs(
@@ -127,7 +134,8 @@ contract UniversalRouterDistributor is Test {
         claimable = bound(claimable, 1 ether, type(uint256).max);
         uint256 boundedSize = bound(size, 2, MAX_RECEIVERS);
 
-        bytes32[] memory data = _setupRewards(address(token1), claimable, boundedSize);
+        uint256[] memory rewards = _computeRewards(claimable, boundedSize);
+        (bytes32[] memory data,) = _setupRewards(address(token1), rewards);
 
         bytes32[] memory proof = merkle.getProof(data, 0);
         vm.expectRevert(IUniversalRewardsDistributor.ProofInvalidOrExpired.selector);
@@ -150,40 +158,74 @@ contract UniversalRouterDistributor is Test {
         assertEq(distributor.claimed(account, token), amount);
     }
 
-    function _setupRewards(address token, uint256 claimable, uint256 size) internal returns (bytes32[] memory data) {
-        data = new bytes32[](size);
+    function _computeRewards(uint256 claimable, uint256 size) internal pure returns (uint256[] memory rewards) {
+        rewards = new uint256[](size);
 
         uint256 i;
-        uint256 total;
         uint256 remaining = claimable;
-        while (i < size) {
+        while (i < size - 1) {
+            uint256 claimableInput = remaining / 2;
+
+            rewards[i] = claimableInput;
+
+            i += 1;
+            remaining -= claimableInput;
+        }
+
+        rewards[size - 1] = remaining;
+    }
+
+    function _computeHalfRewards(uint256[] memory rewards) internal pure returns (uint256[] memory halfs) {
+        halfs = new uint256[](rewards.length);
+
+        uint256 i;
+        while (i < rewards.length) {
+            halfs[i] = rewards[i] / 2;
+
+            i += 1;
+        }
+    }
+
+    function _setupRewards(address token, uint256[] memory rewards)
+        internal
+        returns (bytes32[] memory data, uint256 total)
+    {
+        return _setupRewards(token, rewards, 0);
+    }
+
+    function _setupRewards(address token, uint256[] memory rewards, uint256 alreadySent)
+        internal
+        returns (bytes32[] memory data, uint256 total)
+    {
+        data = new bytes32[](rewards.length);
+
+        uint256 i;
+        while (i < rewards.length) {
             uint256 index = i + 1;
 
-            uint256 claimableInput = remaining / 2;
+            uint256 claimableInput = rewards[i];
 
             data[i] = keccak256(bytes.concat(keccak256(abi.encode(vm.addr(index), claimableInput))));
 
             i += 1;
             total += claimableInput;
-            remaining -= claimableInput;
         }
 
-        deal(token, address(this), total);
+        deal(token, address(this), total - alreadySent);
 
-        ERC20(token).approve(address(distributor), total);
+        ERC20(token).approve(address(distributor), total - alreadySent);
 
         bytes32 root = merkle.getRoot(data);
-        distributor.updateRoot(token, total, root);
+        distributor.updateRoot(token, total - alreadySent, root);
     }
 
-    function _claimAndVerifyRewards(address token, bytes32[] memory data, uint256 claimable) internal {
+    function _claimAndVerifyRewards(address token, uint256[] memory rewards, bytes32[] memory data) internal {
         uint256 i;
-        uint256 remaining = claimable;
         while (i < data.length) {
             bytes32[] memory proof = merkle.getProof(data, i);
 
             uint256 index = i + 1;
-            uint256 claimableInput = remaining / 2;
+            uint256 claimableInput = rewards[i];
             uint256 claimableAdjusted = claimableInput - distributor.claimed(vm.addr(index), token);
 
             uint256 balanceBeforeUser = ERC20(token).balanceOf(vm.addr(index));
@@ -205,7 +247,9 @@ contract UniversalRouterDistributor is Test {
             assertEq(distributor.claimed(vm.addr(index), token), balanceBeforeUser + claimableAdjusted);
 
             i += 1;
-            remaining -= claimableInput;
         }
+
+        // distributor is empty after everyone claimed.
+        assertEq(ERC20(token).balanceOf(address(distributor)), 0);
     }
 }
