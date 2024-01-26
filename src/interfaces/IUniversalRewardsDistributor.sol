@@ -9,8 +9,9 @@ interface IUniversalRewardsDistributor {
 
     /// @notice Emitted when the merkle tree's root is updated.
     /// @param token The address of the reward token.
+    /// @param amount The amount of reward token matching the new merkle tree's root.
     /// @param newRoot The new merkle tree's root.
-    event RootUpdated(address indexed token, bytes32 newRoot);
+    event RootUpdated(address indexed token, uint256 amount, bytes32 newRoot);
 
     /// @notice Emitted when rewards are claimed.
     /// @param account The address for which rewards are claimd rewards for.
@@ -28,7 +29,7 @@ interface IUniversalRewardsDistributor {
 
     /* EXTERNAL */
 
-    function updateRoot(address token, bytes32 newRoot) external;
+    function updateRoot(address token, uint256 amount, bytes32 newRoot) external;
 
     function skim(address token) external;
 

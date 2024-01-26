@@ -27,10 +27,13 @@ contract UniversalRewardsDistributor is IUniversalRewardsDistributor, Ownable {
     /* EXTERNAL */
 
     /// @notice Updates the current merkle tree's root.
+    /// @param token The address of the reward token.
+    /// @param amount The amount of reward token matching the new merkle tree's root.
     /// @param newRoot The new merkle tree's root.
-    function updateRoot(address token, bytes32 newRoot) external onlyOwner {
+    function updateRoot(address token, uint256 amount, bytes32 newRoot) external onlyOwner {
         roots[token] = newRoot;
-        emit RootUpdated(token, newRoot);
+        ERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        emit RootUpdated(token, amount, newRoot);
     }
 
     /// @notice Transfers the `token` balance from this contract to the owner.
