@@ -7,7 +7,10 @@ import {UniversalRewardsDistributor} from "src/UniversalRewardsDistributor.sol";
 
 contract DeployUniversalRewardsDistributor is Script {
     function run() public {
-        vm.broadcast();
+        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+
+        vm.startBroadcast(deployerPrivateKey);
         console.log(address(new UniversalRewardsDistributor()));
+        vm.stopBroadcast();
     }
 }
