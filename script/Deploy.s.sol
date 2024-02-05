@@ -5,7 +5,7 @@ import "@forge-std/Script.sol";
 
 import {UniversalRewardsDistributor} from "src/UniversalRewardsDistributor.sol";
 
-contract DeployUniversalRewardsDistributor is Script {
+contract Deploy is Script {
     function run() public {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
 
